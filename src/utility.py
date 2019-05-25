@@ -12,9 +12,6 @@ class Utility:
     * Can be constructed from an already made function, so no points, no fitting, just plots
     and addition and multiplication methods. which is useful for when returning a MAUF
     where the function would be calculated and returned
-
-    * When constructed from points, an assessment must be made to assign the five points
-    form Keeney and Raiffa method
     """
 
     name = attrib()
@@ -51,9 +48,9 @@ class Utility:
             u = Utility.from_assessment(name="u")
             x = np.array([worst, lower_middle, middle, upper_middle, best])
             u.assess(points=x)
-            return u.fit().aic
+            return u.fit().chisqr
 
-        return minimize(residuals, params, args=(1, 1), method="nelder")
+        return minimize(residuals, params, args=(1, 1), method="basinhopping")
 
     def assess(self, points=None, interactive=False):
         """Take in five points for direct assessment. When interactive
