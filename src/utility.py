@@ -25,7 +25,7 @@ class Utility:
     def from_assessment(cls, name):
         return cls(name=name)
 
-    def perfect_assess(self, vector, is_cost=False):
+    def perfect_assess(self, vector, is_cost=False, method="least_squares"):
         # TODO: check if it is cost
         # TODO: check for when best and worst are not extrema
         worst = vector.min()
@@ -39,7 +39,7 @@ class Utility:
         params.add("upper_middle", min=vector.min(), max=vector.max())
         params.add("best", value=best, vary=False)
 
-        def residuals(params, x, y):
+        def objective(params):
             worst = params["worst"]
             lower_middle = params["lower_middle"]
             middle = params["middle"]
@@ -50,7 +50,7 @@ class Utility:
             u.assess(points=x)
             return u.fit().chisqr
 
-        return minimize(residuals, params, args=(1, 1), method="basinhopping")
+        return minimize(objective, params, method=method)
 
     def assess(self, points=None, interactive=False):
         """Take in five points for direct assessment. When interactive
@@ -62,34 +62,7 @@ class Utility:
         """
         # TODO: add a way to choose points optimally based
         # on a vector to fit a model by minimizing a chi-square
-        if interactive:
-            print("Set the value for")
-            display(Latex(r"$$x^*$$"))
-            best = input()
-            display(Latex(r"$$x^0$$"))
-            worst = input()
-            indifference_lotteries = lambda x, y: (
-                r"$$\left[?\right] \approx 0.5 \left["
-                f"{x}"
-                r"\right] + 0.5 \left["
-                f"{y}"
-                r"\right]\\\text{ where }"
-                f"x^* = {x}"
-                r"\text{ and }"
-                f"x^0 = {y}"
-                r"\\\text{ and } \mathbf{E}"
-                f"\left(0.5 \left[{x}\\right] + 0.5 \left[{y}\\right]\\right)"
-                f"= {0.5 * float(x) + 0.5 * float(y)}$$"
-            )
-            display(Latex(indifference_lotteries(best, worst)))
-            middle = input()
-            display(Latex(indifference_lotteries(best, middle)))
-            upper_middle = input()
-            display(Latex(indifference_lotteries(middle, worst)))
-            lower_middle = input()
-            self.points = np.array([worst, lower_middle, middle, upper_middle, best])
-        else:
-            self.points = points
+        self.points = points
         return self.points
 
     @property
@@ -106,22 +79,25 @@ class Utility:
         self.params.add("a", value=1.0)
         self.params.add("b", value=1.0)
         self.params.add("c", value=1.0)
+
         self.result = minimize(
-            self._residuals, self.params, args=(self.points, np.linspace(0, 1, 5))
+            self.residuals, self.params, args=(self.points, np.linspace(0, 1, 5))
         )
         return self.result
 
-    def _model(self, x, params):
+    def model(self, x, params=None):
         """
         Return an array of y values based on function calculated inside
         """
+        if params is None:
+            params = self.result.params
         a = params["a"]
         b = params["b"]
         c = params["c"]
 
         return a + b ** (-c * x)
 
-    def _residuals(self, params, x, data):
+    def residuals(self, params, x, data):
         """
         Return the gap
         """
@@ -129,12 +105,15 @@ class Utility:
         b = params["b"]
         c = params["c"]
 
-        model = partial(self._model, params=params)
-        return data - model(x)
+        return self.model(x, params) - data
 
     def plot(self):
         trace1 = go.Scatter(x=self.points, y=np.linspace(0, 1, 5))
         x = np.linspace(self.points.min(), self.points.max(), 50)
-        y = self._model(x, self.result.params)
+        y = self.model(x=x)
         trace2 = go.Scatter(x=x, y=y)
         return [trace1, trace2]
+
+    def __mul__(self, other):
+        # u(x, y) = kxux(x)+ kyuy(y)+kxyux(x)uy(y)
+        return lambda x, y: self.model(x) + other.model(y)
