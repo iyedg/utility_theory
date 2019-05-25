@@ -15,30 +15,45 @@ def main(input_filepath, output_filepath):
     """
     logger = logging.getLogger(__name__)
     logger.info("making final data set from raw data")
-    ignored_regions = [
-        "Tunisia",
-        "North East",
-        "Center East",
-        "Center West",
-        "South East",
-        "South West",
-        "North West",
-    ]
     data = (
-        pd.read_csv(input_filepath)
+        pd.read_excel(input_filepath)
         .pipe(
-            lambda df: df.assign(
-                regions=df.regions.str.replace("Governorate of", "")
-                .str.replace("du", "")
-                .str.strip()
+            lambda df: df.drop(
+                columns=[
+                    "Indicators: Sources",
+                    "Indicators: Unit",
+                    "Indicators: Methodology",
+                    "Indicators: Comment",
+                    "Indicators: Key",
+                    "Regions: Key",
+                    "Regions: ISO",
+                    "Scale: Key",
+                    "Scale: Name",
+                    "Frequency",
+                ]
             )
         )
-        .pipe(lambda df: df.loc[(-df["regions"].isin(ignored_regions))])
-        .pipe(lambda df: df.drop(columns=["Unit"]))
-        .pipe(lambda df: df.rename(columns=lambda x: x.lower()))
+        .pipe(
+            lambda df: df.assign(
+                **{
+                    "Indicators: Last Update": df["Indicators: Last Update"].apply(
+                        pd.to_datetime
+                    ),
+                    "Date": df["Date"].apply(pd.to_datetime),
+                }
+            )
+        )
+        .pipe(lambda df: df.loc[(df["Date"] < df["Indicators: Last Update"].min())])
+        .pipe(lambda df: df.assign(**{"Date": df["Date"].apply(lambda x: x.year)}))
+        .pipe(lambda df: df.drop(columns=["Indicators: Last Update"]))
         .pipe(
             lambda df: df.rename(
-                columns={"regions": "region", "indicators": "indicator"}
+                columns={
+                    "Facts: Value": "value",
+                    "Indicators: Full name": "indicator",
+                    "Regions: Name": "region",
+                    "Date": "date",
+                }
             )
         )
     )
