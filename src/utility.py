@@ -1,94 +1,75 @@
-from attr import attrs, attrib
+import attr
 import numpy as np
-from lmfit import minimize, Parameters
+from lmfit import minimize, Parameters, Parameter
 import plotly.graph_objs as go
-from functools import partial
-from IPython.display import Latex, display
 import diofant
 
 
-@attrs
-class Utility:
-    """
-    * Can be constructed from an already made function, so no points, no fitting, just plots
-    and addition and multiplication methods. which is useful for when returning a MAUF
-    where the function would be calculated and returned
-    """
+@attr.s
+class Utility(object):
+    name = attr.ib()
+    points = attr.ib(default=None)
+    optimal_fit = attr.ib(default=False)
+    data = attr.ib(default=None)
+    is_cost = attr.ib(default=False)
+    method = attr.ib(default="least_squares")
+    # Usefule fo when adding an already calculated function
+    params = attr.ib(default=None)
 
-    name = attrib()
-    function = attrib(default=None)
-
-    @classmethod
-    def from_function(cls, name, function):
-        return cls(name=name, function=function)
-
-    @classmethod
-    def from_assessment(cls, name):
-        return cls(name=name)
-
-    def assess(
-        self,
-        points=None,
-        optimal_fit=False,
-        vector=None,
-        is_cost=False,
-        method="least_squares",
-    ):
+    def assess(self):
         # TODO: mutually exclusive args
-        """Take in five points for direct assessment. When interactive
-        is True, a Hint is displayed at each step of the assessment.
-
-        Keyword Arguments:
-            points {np.array | list-like} -- a list of five points (default: {None})
-        """
-        # TODO: check if it is cost
         # TODO: check for when best and worst are not extrema
-        if optimal_fit:
-            self.worst = vector.min()
-            self.best = vector.max()
-            if is_cost:
+
+        if self.optimal_fit:
+            self.worst = self.data.min()
+            self.best = self.data.max()
+
+            if self.is_cost:
                 self.worst, self.best = self.best, self.worst
-            params = Parameters()
-            params.add("worst", value=self.worst, vary=False)
-            params.add("lower_middle", min=vector.min(), max=vector.max())
-            params.add("middle", min=vector.min(), max=vector.max())
-            params.add("upper_middle", min=vector.min(), max=vector.max())
-            params.add("best", value=self.best, vary=False)
+            points_params = Parameters()
+            worst = Parameter("worst", value=self.worst, vary=False)
+            lower_middle = Parameter("lower_middle")
+            middle = Parameter("middle")
+            upper_middle = Parameter("upper_middle")
+            best = Parameter("best", value=self.best, vary=False)
+            for param in [lower_middle, middle, upper_middle]:
+                param.set(min=self.data.min(), max=self.data.max())
+            points_params.add_many(worst, lower_middle, middle, upper_middle, best)
 
             def objective(params):
-                worst = params["worst"]
-                lower_middle = params["lower_middle"]
-                middle = params["middle"]
-                upper_middle = params["upper_middle"]
-                best = params["best"]
-                u = Utility.from_assessment(name="u")
-                x = np.array([worst, lower_middle, middle, upper_middle, best])
-                u.assess(points=x)
-                return u.fit().chisqr
+                v = params.valuesdict()
+                u = Utility(name="u", points=list(v.values()))
+                u.fit()
+                chisqr = u.result.chisqr
+                return chisqr
 
-            self.optimal_fit = minimize(objective, params, method=method)
-            self.points = np.array(list(self.optimal_fit.params.valuesdict().values()))
+            self.optimal_points = minimize(objective, points_params, method=self.method)
+            v = self.optimal_points.params.valuesdict()
+            self.points = np.array(list(v.values()))
         else:
-            self.points = points
+
+            # TODO: DRY this comparison
+            self.worst = self.points.min()
+            self.best = self.points.max()
+
+            if self.is_cost:
+                self.worst, self.best = self.best, self.worst
         return self.points
 
-    @property
-    def points(self):
-        return np.array(self._points)
-
-    @points.setter
-    def points(self, points_array):
-        # TODO: verify length is 5
-        self._points = points_array
-
     def fit(self):
-        self.params = Parameters()
-        self.params.add("a", value=1.0)
-        self.params.add("b", value=1.0)
-        self.params.add("c", value=1.0)
+
+        if not self.params:
+            self.params = Parameters()
+            a = Parameter(name="a", value=1)
+            b = Parameter(name="b", value=1)
+            c = Parameter(name="c", value=1)
+            self.params.add_many(a, b, c)
 
         self.result = minimize(
-            self.residuals, self.params, args=(self.points, np.linspace(0, 1, 5))
+            self.residuals,
+            self.params,
+            args=(self.points, np.linspace(0, 1, 5)),
+            nan_policy="propagate",
         )
         return self.result
 
@@ -98,11 +79,10 @@ class Utility:
         """
         if params is None:
             params = self.result.params
-        a = params["a"]
-        b = params["b"]
-        c = params["c"]
 
-        y = a + b ** (-c * x)
+        v = params.valuesdict()
+
+        y = v["a"] + v["b"] ** (-v["c"] * np.array(x))
         return y
 
     def normalized_model(self, x, params=None):
@@ -112,24 +92,18 @@ class Utility:
         """
         if params is None:
             params = self.result.params
-        a = params["a"]
-        b = params["b"]
-        c = params["c"]
+        v = params.valuesdict()
 
         lower = self.model(self.worst)
         upper = self.model(self.best)
-        y = a + b ** (-c * x)
+        y = v["a"] + v["b"] ** (-v["c"] * np.array(x))
         return (y - lower) / (upper - lower)
 
     def residuals(self, params, x, data):
         """
         Return the gap
         """
-        a = params["a"]
-        b = params["b"]
-        c = params["c"]
-
-        return self.model(x, params) - data
+        return self.model(x, params=params) - data
 
     def plot(self):
         trace1 = go.Scatter(x=self.points, y=np.linspace(0, 1, 5))
@@ -139,5 +113,11 @@ class Utility:
         return [trace1, trace2]
 
     def __mul__(self, other):
-        pass
+        x, y = diofant.symbols("x, y")
+        f = lambda x: x.replace(" ", "_").lower()
+        kx, ky = diofant.symbols(r"k_{}, k_{}".format(f(self.name), f(other.name)))
+        sauf_x = lambda x: self.normalized_model(x)
+        sauf_y = lambda y: other.normalized_model(y)
+        mauf = kx * sauf_x(x) + ky * sauf_y(y) + (1 - kx - ky) * sauf_x(x) * sauf_y(y)
 
+        return mauf
