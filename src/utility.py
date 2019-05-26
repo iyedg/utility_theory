@@ -4,6 +4,7 @@ from lmfit import minimize, Parameters
 import plotly.graph_objs as go
 from functools import partial
 from IPython.display import Latex, display
+import diofant
 
 
 @attrs
@@ -85,7 +86,7 @@ class Utility:
         )
         return self.result
 
-    def model(self, x, params=None):
+    def model(self, x, params=None, rounding=None):
         """
         Return an array of y values based on function calculated inside
         """
@@ -95,7 +96,11 @@ class Utility:
         b = params["b"]
         c = params["c"]
 
-        return a + b ** (-c * x)
+        y = a + b ** (-c * x)
+        if rounding:
+            if isinstance(x, int) or isinstance(x, float):
+                return np.abs(np.round(y, 3))
+        return y
 
     def residuals(self, params, x, data):
         """
@@ -115,5 +120,27 @@ class Utility:
         return [trace1, trace2]
 
     def __mul__(self, other):
-        # u(x, y) = kxux(x)+ kyuy(y)+kxyux(x)uy(y)
-        return lambda x, y: self.model(x) + other.model(y)
+        kx, ky = diofant.symbols("k_x, k_y")
+        p, q = diofant.symbols("p, q")
+        ux = partial(self.model, rounding=True)
+        uy = partial(other.model, rounding=True)
+        mauf = lambda x, y: kx * ux(x) + ky * uy(y) + (1 - kx - ky) * ux(x) * uy(y)
+        # kx
+        l1 = mauf(self.points.max(), other.points.min())
+        l2 = p * mauf(self.points.max(), other.points.max()) + (1 - p) * mauf(
+            self.points.min(), other.points.min()
+        )
+        # ky
+        l3 = mauf(self.points.min(), other.points.max())
+        l4 = q * mauf(self.points.max(), other.points.max()) + (1 - q) * mauf(
+            self.points.min(), other.points.min()
+        )
+        # TODO: handle when no solution instead of getting first element directly
+        scaling_k = diofant.solve([l1 - l2, l3 - l4])[0]
+        mauf = (
+            lambda x, y: scaling_k.get(kx) * ux(x)
+            + scaling_k.get(ky) * uy(y)
+            + (1 - scaling_k.get(kx) - scaling_k.get(ky)) * ux(x) * uy(y)
+        )
+        return mauf
+
