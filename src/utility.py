@@ -3,6 +3,8 @@ import numpy as np
 from lmfit import minimize, Parameters, Parameter
 import plotly.graph_objs as go
 import diofant
+from functools import reduce
+from operator import mul
 
 
 @attr.s
@@ -13,19 +15,54 @@ class Utility(object):
     data = attr.ib(default=None)
     is_cost = attr.ib(default=False)
     method = attr.ib(default="least_squares")
-    # Usefule fo when adding an already calculated function
+    # Useful fo when adding an already calculated function
     params = attr.ib(default=None)
+    # For MAUFs
+    saufs = attr.ib(default={})
+
+    @property
+    def best(self):
+        if self.saufs:
+            # MAUF
+            self.__best = {}
+            for key, value in self.saufs.items():
+                self.__best[key] = value.best
+        else:
+            # SAUF
+            if self.optimal_fit:
+                self.__best = self.data.max()
+                if self.is_cost:
+                    self.__best = self.data.min()
+            else:
+                self.__best = self.points.max()
+                if self.is_cost:
+                    self.__best = self.min.min()
+        return self.__best
+
+    @property
+    def worst(self):
+        if self.saufs:
+            # MAUF
+            self.__worst = {}
+            for key, value in self.saufs.items():
+                self.__worst[key] = value.worst
+        else:
+            # SAUF
+            if self.optimal_fit:
+                self.__worst = self.data.min()
+                if self.is_cost:
+                    self.__worst = self.data.max()
+            else:
+                self.__worst = self.points.min()
+                if self.is_cost:
+                    self.__worst = self.min.max()
+        return self.__worst
 
     def assess(self):
         # TODO: mutually exclusive args
         # TODO: check for when best and worst are not extrema
 
         if self.optimal_fit:
-            self.worst = self.data.min()
-            self.best = self.data.max()
-
-            if self.is_cost:
-                self.worst, self.best = self.best, self.worst
             points_params = Parameters()
             worst = Parameter("worst", value=self.worst, vary=False)
             lower_middle = Parameter("lower_middle")
@@ -46,14 +83,6 @@ class Utility(object):
             self.optimal_points = minimize(objective, points_params, method=self.method)
             v = self.optimal_points.params.valuesdict()
             self.points = np.array(list(v.values()))
-        else:
-
-            # TODO: DRY this comparison
-            self.worst = self.points.min()
-            self.best = self.points.max()
-
-            if self.is_cost:
-                self.worst, self.best = self.best, self.worst
         return self.points
 
     def fit(self):
@@ -112,12 +141,32 @@ class Utility(object):
         trace2 = go.Scatter(x=x, y=y)
         return [trace1, trace2]
 
-    def __mul__(self, other):
-        x, y = diofant.symbols("x, y")
-        f = lambda x: x.replace(" ", "_").lower()
-        kx, ky = diofant.symbols(r"k_{}, k_{}".format(f(self.name), f(other.name)))
-        sauf_x = lambda x: self.normalized_model(x)
-        sauf_y = lambda y: other.normalized_model(y)
-        mauf = kx * sauf_x(x) + ky * sauf_y(y) + (1 - kx - ky) * sauf_x(x) * sauf_y(y)
+    def scale(self, **kwargs):
+        # pass the value of the scaling constant with key its name
+        self.scaling_constants = kwargs
 
+    def eval(self):
+        k = diofant.symbols("k")
+        scaling_constants = np.array(list(self.scaling_constants.values()))
+        rhs = reduce(mul, k * scaling_constants + 1, 1)
+        lhs = k + 1
+        sols = diofant.solve(lhs - rhs)
+        # as opposed to complex
+        # filter real solutions
+        return sols
+
+    def __mul__(self, other):
+        # if self.saufs and other.saufs:
+        #     saufs = {**self.saufs, **other.saufs}
+        # elif self.saufs:
+        #     saufs = {**self.saufs, other.name: other}
+        # elif other.saufs:
+        #     saufs = {**other.saufs, self.name: self}
+        # else:
+        saufs = {self.name: self, other.name: other}
+
+        mauf = Utility(name="_".join(saufs.keys()), saufs=saufs)
         return mauf
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
