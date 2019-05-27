@@ -80,6 +80,10 @@ df = (
                     "The number of beds for the public health sector",
                     "The total number of pharmacies",
                     "Estimate of the population on July 1st",
+                    "Number of institutes, centers and specialized hospitals in public sector",
+                    "Number of public district hospitals",
+                    "Number of regional public hospitals",
+                    "The number of public hospitals",
                 ]
             )
         ]
@@ -93,6 +97,8 @@ df = (
 # ## All values are calculated as Number per 1000 inhabitants
 
 # %%
-df.to_csv(r"D:\School\Advanced decision theory\utility_theory_tunisia_health\data\processed\health_infrastructure.csv")
+df.to_csv(
+    r"D:\School\Advanced decision theory\utility_theory_tunisia_health\data\processed\health_infrastructure.csv"
+)
 
 # %%

@@ -142,13 +142,14 @@ class Utility(object):
         return [trace1, trace2]
 
     def scale(self, **kwargs):
+        # TODO: ensure provided kwargs are keys in saufs
         # pass the value of the scaling constant with key its name
         self.scaling_constants = kwargs
         ## TODO: Assuming order, should find a way to pair each ki to its value by name
         ## may not be necessary since we do not care about the value of each UF
         scaling_constants = np.array(list(self.scaling_constants.values()))
         if sum(scaling_constants) == 1:
-            return 0
+            self.k = 0
         k = diofant.symbols("k")
         rhs = reduce(mul, k * scaling_constants + 1, 1)
         lhs = k + 1
@@ -160,9 +161,19 @@ class Utility(object):
         )
         not_null = [sol.get(k) for sol in real_solutions if sol.get(k) != 0]
         if len(not_null) == 0:
-            return 0
+            self.k = 0
         else:
-            return not_null[0]
+            self.k = not_null[0]
+        return self.k
+
+    def eval(self, **kwargs):
+        if self.saufs:
+            lhs = 1 + self.k
+        else:
+            return self.normalized_model(kwargs["x"])
+
+    def expr(self):
+        pass
 
     def __mul__(self, other):
         saufs = {self.name: self, other.name: other}
