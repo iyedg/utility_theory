@@ -144,27 +144,28 @@ class Utility(object):
     def scale(self, **kwargs):
         # pass the value of the scaling constant with key its name
         self.scaling_constants = kwargs
-
-    def eval(self):
-        k = diofant.symbols("k")
+        ## TODO: Assuming order, should find a way to pair each ki to its value by name
+        ## may not be necessary since we do not care about the value of each UF
         scaling_constants = np.array(list(self.scaling_constants.values()))
+        if sum(scaling_constants) == 1:
+            return 0
+        k = diofant.symbols("k")
         rhs = reduce(mul, k * scaling_constants + 1, 1)
         lhs = k + 1
         sols = diofant.solve(lhs - rhs)
-        # as opposed to complex
-        # filter real solutions
-        return sols
+        # as opposed to complex, filter real solutions
+        real_solutions = filter(
+            lambda sol: -1 <= sol.get(k) <= 1,
+            filter(lambda sol: sol.get(k).is_Float, sols),
+        )
+        not_null = [sol.get(k) for sol in real_solutions if sol.get(k) != 0]
+        if len(not_null) == 0:
+            return 0
+        else:
+            return not_null[0]
 
     def __mul__(self, other):
-        # if self.saufs and other.saufs:
-        #     saufs = {**self.saufs, **other.saufs}
-        # elif self.saufs:
-        #     saufs = {**self.saufs, other.name: other}
-        # elif other.saufs:
-        #     saufs = {**other.saufs, self.name: self}
-        # else:
         saufs = {self.name: self, other.name: other}
-
         mauf = Utility(name="_".join(saufs.keys()), saufs=saufs)
         return mauf
 
